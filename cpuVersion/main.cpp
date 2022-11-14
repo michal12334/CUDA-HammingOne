@@ -25,9 +25,9 @@ int main() {
     }
 
     for(int i = 0; i < n; i++) {
-        for(int j = 0; j < n; j++) {
+        for(int j = i + 1; j < n; j++) {
             if(hammingDistance(numbers[i], numbers[j], l) == 1) {
-                cout << i << " " << j << "\n";
+                cout << numbers[i] << " " << numbers[j] << "\n";
             }
         }
     }
