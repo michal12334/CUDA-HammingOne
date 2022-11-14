@@ -1,5 +1,5 @@
 build:
-	nvcc -o main main.cpp
+	nvcc -o main main.cu
 
 clean:
 	rm main
