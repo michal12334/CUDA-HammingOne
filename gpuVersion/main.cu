@@ -20,7 +20,7 @@ __device__ Pair hammingDistance(char* a, char* b, int l) {
 }
 
 __global__ void compute(char* d_mem, int n, int l, int* d_pairs, int* d_numberOfPairs) {
-    int tid = threadIdx.x + blockIdx.x;
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
     for(int i = tid + 1; i < n; i++) {
         auto hd = hammingDistance(d_mem + tid*l, d_mem + i*l, l);
         if(hd.x == 1) {
