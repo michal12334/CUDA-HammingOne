@@ -10,8 +10,8 @@
 __device__ int countBits(int a) {
     int result = 0;
     while(a) {
-        result += a & 1;
-        a>>= 1;
+        result += a % 2;
+        a /= 2;
     }
     return result;
 }
@@ -51,8 +51,8 @@ int main() {
     int n, l;
     std::cin >> n >> l;
 
-    const int NUMBER_OF_THREADS = 1024;
-    const int NUMBER_OF_BLOCKS = n / 1024 + 1;
+    const int NUMBER_OF_THREADS = 256;
+    const int NUMBER_OF_BLOCKS = n / NUMBER_OF_THREADS + 1;
 
     int* mem = new int[WORD_MAX_SIZE * n];
     for(int i = 0; i < n; i++) {
