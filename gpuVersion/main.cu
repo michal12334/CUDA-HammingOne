@@ -2,100 +2,101 @@
 #include <thrust/device_vector.h>
 #include <stdio.h>
 
-struct Pair {
-    int x;
-    int y;
-};
+#define WARP_SIZE 32
+#define WORD_MAX_SIZE 32
+#define NUMBER_OF_BANKS WARP_SIZE
+#define WARP_WORDS_SIZE (WARP_SIZE*WORD_MAX_SIZE)
 
-__device__ Pair hammingDistance(char* a, char* b, int l) {
-    Pair result;
-    result.x = 0;
-    for(int i = 0; i < l; i++) {
-        if(a[i] != b[i]) {
-            result.x++;
-            result.y = i;
-        }
+__device__ int countBits(int a) {
+    int result = 0;
+    while(a) {
+        result += a & 1;
+        a>>= 1;
     }
     return result;
 }
 
-__global__ void compute(char* d_mem, int n, int l, bool* d_pairs) {
-    extern __shared__ char shm[];
-    int mem1Offset = 32*l;
+__global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
+    extern __shared__ int shm[];
 
-    int tidX = threadIdx.x;
-    int tidY = threadIdx.y;
-    int tid = tidX + tidY * 32;
-    int bidX = blockIdx.x;
-    int bidY = blockIdx.y;
+    int gid = threadIdx.x + blockDim.x * blockIdx.x;
+    int tid = threadIdx.x;
+    int wid = threadIdx.x / WARP_SIZE;
+    int idInWarp = threadIdx.x % WARP_SIZE;
 
-    if(tidX >= n || tidY >= n)
+    if(gid >= n)
         return;
-    
-    int a = bidX * 32 * n * l;
-    int b = bidY * 32 * n * l;
-    for(int i = tid; i < mem1Offset; i+= blockDim.x*blockDim.y) {
-        int index = i;
-        shm[index] = d_mem[a + index/32 + (i%32)*l];
-        shm[index + mem1Offset] = d_mem[b + index/32 + (i%32)*l];
+
+    for(int i = 0; i < WORD_MAX_SIZE; i++) {
+        shm[i*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE] = d_mem[i + gid*WORD_MAX_SIZE];
     }
 
-    __syncthreads();
+    int numberOfPairs = 0;
 
-    if(tidX >= tidY)
-        return;
-
-    Pair hm;
-    hm.x = 0;
-    for(int i = 0; i < l; i++) {
-        if(shm[tidX + 32*i] != shm[tidY + 32*i + mem1Offset]) {
-            hm.x++;
-            hm.y = i;
+    for(int i = gid + 1; i < n; i++) {
+        int distance = 0;
+        for(int j = 0; j < WORD_MAX_SIZE; j++) {
+            int temp = d_mem[j + i*WORD_MAX_SIZE] ^ shm[j*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE];
+            int cd = countBits(temp);
+            distance += cd;
         }
-    }
-    if(hm.x == 1) {
-        d_pairs[a + tidX*l + hm.y] = true;
+        if(distance == 1) {
+            d_pairs[numberOfPairs + l*gid] = i;
+            numberOfPairs++;
+        }
     }
 }
 
 int main() {
     int n, l;
     std::cin >> n >> l;
+
     const int NUMBER_OF_THREADS = 1024;
     const int NUMBER_OF_BLOCKS = n / 1024 + 1;
-    char* mem = new char[n * l + 1];
-    bool* pairs = new bool[n * l];
-    for(int i = 0; i < n; i++)
-        std::cin >> (mem + i * l);
-    char* d_mem;
-    bool* d_pairs;
-    cudaMalloc(&d_mem, n * l * sizeof(char));
-    cudaMalloc(&d_pairs, n * l * sizeof(bool));
-    cudaMemcpy(d_mem, mem, n * l * sizeof(char), cudaMemcpyHostToDevice);
-    cudaMemset(d_pairs, 0, n * l * sizeof(bool));
 
-    size_t shmSize = (64*l) * sizeof(char);
-    // size_t shmSize = 1e9;
-    compute<<<dim3(sqrt(n)/32 + 1, sqrt(n)/32 + 1, 1), dim3(32, 32, 1), shmSize>>>(d_mem, n, l, d_pairs);
-
-    cudaMemcpy(pairs, d_pairs, n * l * sizeof(bool), cudaMemcpyDeviceToHost);
-
+    int* mem = new int[WORD_MAX_SIZE * n];
+    for(int i = 0; i < n; i++) {
+        for(int j = 0; j < WORD_MAX_SIZE; j++) {
+            mem[j + i*WORD_MAX_SIZE] = 0;
+        }
+    }
     for(int i = 0; i < n; i++) {
         for(int j = 0; j < l; j++) {
-            if(pairs[j + i*l]) {
-                for(int k = 0; k < l; k++)
-                    std::cout << mem[k + i*l];
-                std::cout << " ";
-                for(int k = 0; k < l; k++)
-                    if(k == j)
-                        std::cout << (mem[k + i*l] == '0' ? '1' : '0');
-                    else
-                        std::cout << mem[k + i*l];
-                std::cout << "\n";
-            }
+            char a;
+            do {
+                std::cin.get(a);
+            } while(isspace(a));
+            mem[j / 32 + i * WORD_MAX_SIZE] *= 2;
+            if(a == '1')
+                mem[j / 32 + i * WORD_MAX_SIZE]++;
+        }
+    }
+    int* d_mem;
+    int* d_pairs;
+    cudaMalloc(&d_mem, WORD_MAX_SIZE*n*sizeof(int));
+    cudaMalloc(&d_pairs, l*n*sizeof(int));
+    cudaMemcpy(d_mem, mem, WORD_MAX_SIZE*n*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemset(d_pairs, 0, l*n*sizeof(int));
+
+    size_t shmSize = 32 * 1024;
+    compute<<<NUMBER_OF_BLOCKS, NUMBER_OF_THREADS, shmSize>>>(d_mem, n, l, d_pairs);
+
+    int* pairs = new int[n * l];
+
+    cudaMemcpy(pairs, d_pairs, n*l*sizeof(int), cudaMemcpyDeviceToHost);
+
+    for(int i = 0; i < n; i++) {
+        int j = 0;
+        while(pairs[j + i*l] != 0 && j < l) {
+            std::cout << i << " " << pairs[j + i*l] << "\n";
+            j++;
         }
     }
 
+
+    delete[] pairs;
     delete[] mem;
+    cudaFree(d_mem);
+    cudaFree(d_pairs);
     return 0;
 }
