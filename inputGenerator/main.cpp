@@ -25,18 +25,34 @@ bool doesExist(const vector<string>& v, const string& str) {
     return false;
 }
 
+string generatePair(const vector<string>& v) {
+    int i = rand() % v.size();
+    int j = rand() % v[i].size();
+    string result = v[i];
+    result[j] = result[j] == '0' ? '1' : '0';
+    return result;
+}
+
 int main() {
     srand(time(NULL));
-    int n, l;
-    cin >> n >> l;
+    int n, l, minNumberOfPairs;
+    cin >> n >> l >> minNumberOfPairs;
     vector<string> result;
 
     for(int i = 0; i < n; i++) {
-        string newStr = generateRandomString(l);
-        while(doesExist(result, newStr)) {
-            newStr = generateRandomString(l);
+        if(i < n - minNumberOfPairs) {
+            string newStr = generateRandomString(l);
+            while(doesExist(result, newStr)) {
+                newStr = generateRandomString(l);
+            }
+            result.push_back(newStr);
+        } else {
+            string newStr = generatePair(result);
+            while(doesExist(result, newStr)) {
+                newStr = generatePair(result);
+            }
+            result.push_back(newStr);
         }
-        result.push_back(newStr);
     }
 
     cout << n << " " << l << "\n";
