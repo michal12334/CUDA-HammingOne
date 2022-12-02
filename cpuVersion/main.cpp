@@ -27,7 +27,7 @@ int main() {
     for(int i = 0; i < n; i++) {
         for(int j = i + 1; j < n; j++) {
             if(hammingDistance(numbers[i], numbers[j], l) == 1) {
-                cout << numbers[i] << " " << numbers[j] << "\n";
+                cout << i << " " << j << "\n";
             }
         }
     }
