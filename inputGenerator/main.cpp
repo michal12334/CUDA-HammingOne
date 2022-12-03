@@ -33,10 +33,11 @@ string generatePair(const vector<string>& v) {
     return result;
 }
 
-int main() {
+int main(int argc, char** argv) {
     srand(time(NULL));
-    int n, l, minNumberOfPairs;
-    cin >> n >> l >> minNumberOfPairs;
+    int n = atoi(argv[1]);
+    int l = atoi(argv[2]);
+    int minNumberOfPairs = atoi(argv[3]);
     vector<string> result;
 
     for(int i = 0; i < n; i++) {
