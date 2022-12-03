@@ -20,7 +20,6 @@ __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
     extern __shared__ int shm[];
 
     int gid = threadIdx.x + blockDim.x * blockIdx.x;
-    int tid = threadIdx.x;
     int wid = threadIdx.x / WARP_SIZE;
     int idInWarp = threadIdx.x % WARP_SIZE;
 
@@ -37,7 +36,7 @@ __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
         int distance = 0;
         for(int j = 0; j < WORD_MAX_SIZE; j++) {
             int temp = d_mem[j + i*WORD_MAX_SIZE] ^ shm[j*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE];
-            int cd = countBits(temp);
+            int cd = __popc(temp);
             distance += cd;
         }
         if(distance == 1) {
