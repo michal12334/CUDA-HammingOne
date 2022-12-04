@@ -7,15 +7,6 @@
 #define NUMBER_OF_BANKS WARP_SIZE
 #define WARP_WORDS_SIZE (WARP_SIZE*WORD_MAX_SIZE)
 
-__device__ int countBits(int a) {
-    int result = 0;
-    while(a) {
-        result += a % 2;
-        a /= 2;
-    }
-    return result;
-}
-
 __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
     extern __shared__ int shm[];
 
@@ -26,6 +17,7 @@ __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
     if(gid >= n)
         return;
 
+    #pragma unroll
     for(int i = 0; i < WORD_MAX_SIZE; i++) {
         shm[i*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE] = d_mem[i + gid*WORD_MAX_SIZE];
     }
@@ -34,6 +26,7 @@ __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
 
     for(int i = gid + 1; i < n; i++) {
         int distance = 0;
+        #pragma unroll
         for(int j = 0; j < WORD_MAX_SIZE; j++) {
             int temp = d_mem[j + i*WORD_MAX_SIZE] ^ shm[j*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE];
             int cd = __popc(temp);
