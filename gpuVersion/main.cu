@@ -6,6 +6,7 @@
 #define WORD_MAX_SIZE 32
 #define NUMBER_OF_BANKS WARP_SIZE
 #define WARP_WORDS_SIZE (WARP_SIZE*WORD_MAX_SIZE)
+#define NUMBER_OF_THREADS 256
 
 __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
     extern __shared__ int shm[];
@@ -13,28 +14,41 @@ __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
     int gid = threadIdx.x + blockDim.x * blockIdx.x;
     int wid = threadIdx.x / WARP_SIZE;
     int idInWarp = threadIdx.x % WARP_SIZE;
+    int minGid = blockIdx.x * NUMBER_OF_THREADS;
+    int tid = threadIdx.x;
 
     if(gid >= n)
         return;
 
-    #pragma unroll
-    for(int i = 0; i < WORD_MAX_SIZE; i++) {
-        shm[i*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE] = d_mem[i + gid*WORD_MAX_SIZE];
-    }
-
     int numberOfPairs = 0;
 
-    for(int i = gid + 1; i < n; i++) {
-        int distance = 0;
-        #pragma unroll
-        for(int j = 0; j < WORD_MAX_SIZE; j++) {
-            int temp = d_mem[j + i*WORD_MAX_SIZE] ^ shm[j*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE];
-            int cd = __popc(temp);
-            distance += cd;
+    int word[WORD_MAX_SIZE];
+
+    for(int i = 0; i < WORD_MAX_SIZE; i++) {
+        word[i] = d_mem[i + gid*WORD_MAX_SIZE];
+    }
+
+    for(int i = minGid + 1; i < n; i += NUMBER_OF_THREADS) {
+        int s = min(NUMBER_OF_THREADS, n - i);
+        __syncthreads();
+        if(tid < s) {
+            for(int j = 0; j < WORD_MAX_SIZE; j++) {
+                shm[j*NUMBER_OF_BANKS + idInWarp + wid*WARP_WORDS_SIZE] = d_mem[j + (tid + i) * WORD_MAX_SIZE];
+            }
         }
-        if(distance == 1) {
-            d_pairs[numberOfPairs + l*gid] = i;
-            numberOfPairs++;
+        for(int j = 0; j < s; j++) {
+            if(gid < j + i) {
+                int distance = 0;
+                for(int k = 0; k < WORD_MAX_SIZE; k++) {
+                    int temp = word[k] ^ shm[k*NUMBER_OF_BANKS + (j%32) + (j/32)*WARP_WORDS_SIZE];
+                    int cd = __popc(temp);
+                    distance += cd;
+                }
+                if(distance == 1) {
+                    d_pairs[numberOfPairs + l*gid] = i + j;
+                    numberOfPairs++;
+                }
+            }
         }
     }
 }
@@ -43,7 +57,6 @@ int main() {
     int n, l;
     std::cin >> n >> l;
 
-    const int NUMBER_OF_THREADS = 256;
     const int NUMBER_OF_BLOCKS = n / NUMBER_OF_THREADS + 1;
 
     int* mem = new int[WORD_MAX_SIZE * n];
