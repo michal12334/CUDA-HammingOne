@@ -1,12 +1,11 @@
 #include <iostream>
-#include <thrust/device_vector.h>
-#include <stdio.h>
 
 #define WARP_SIZE 32
 #define WORD_MAX_SIZE 32
 #define NUMBER_OF_BANKS WARP_SIZE
 #define WARP_WORDS_SIZE (WARP_SIZE*WORD_MAX_SIZE)
 #define NUMBER_OF_THREADS 256
+#define MAX_WORDS_IN_SHM 256
 
 __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
     extern __shared__ int shm[];
@@ -28,8 +27,8 @@ __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
         word[i] = d_mem[i + gid*WORD_MAX_SIZE];
     }
 
-    for(int i = minGid + 1; i < n; i += NUMBER_OF_THREADS) {
-        int s = min(NUMBER_OF_THREADS, n - i);
+    for(int i = minGid + 1; i < n; i += MAX_WORDS_IN_SHM) {
+        int s = min(MAX_WORDS_IN_SHM, n - i);
         __syncthreads();
         if(tid < s) {
             for(int j = 0; j < WORD_MAX_SIZE; j++) {
@@ -40,7 +39,7 @@ __global__ void compute(int* d_mem, int n, int l, int* d_pairs) {
             if(gid < j + i) {
                 int distance = 0;
                 for(int k = 0; k < WORD_MAX_SIZE; k++) {
-                    int temp = word[k] ^ shm[k*NUMBER_OF_BANKS + (j%32) + (j/32)*WARP_WORDS_SIZE];
+                    int temp = word[k] ^ shm[k*NUMBER_OF_BANKS + (j%WARP_SIZE) + (j/WARP_SIZE)*WARP_WORDS_SIZE];
                     int cd = __popc(temp);
                     distance += cd;
                 }
@@ -71,24 +70,24 @@ int main() {
             do {
                 std::cin.get(a);
             } while(isspace(a));
-            mem[j / 32 + i * WORD_MAX_SIZE] *= 2;
+            mem[j / (8*sizeof(int)) + i * WORD_MAX_SIZE] *= 2;
             if(a == '1')
-                mem[j / 32 + i * WORD_MAX_SIZE]++;
+                mem[j / (8*sizeof(int)) + i * WORD_MAX_SIZE]++;
         }
     }
     int* d_mem;
     int* d_pairs;
-    cudaMalloc(&d_mem, WORD_MAX_SIZE*n*sizeof(int));
-    cudaMalloc(&d_pairs, l*n*sizeof(int));
-    cudaMemcpy(d_mem, mem, WORD_MAX_SIZE*n*sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemset(d_pairs, 0, l*n*sizeof(int));
+    cudaMalloc(&d_mem, WORD_MAX_SIZE * n * sizeof(int));
+    cudaMalloc(&d_pairs, l * n * sizeof(int));
+    cudaMemcpy(d_mem, mem, WORD_MAX_SIZE * n * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemset(d_pairs, 0, l * n * sizeof(int));
 
-    size_t shmSize = 32 * 1024;
+    size_t shmSize = WORD_MAX_SIZE * MAX_WORDS_IN_SHM * sizeof(int);
     compute<<<NUMBER_OF_BLOCKS, NUMBER_OF_THREADS, shmSize>>>(d_mem, n, l, d_pairs);
 
     int* pairs = new int[n * l];
 
-    cudaMemcpy(pairs, d_pairs, n*l*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(pairs, d_pairs, n * l * sizeof(int), cudaMemcpyDeviceToHost);
 
     for(int i = 0; i < n; i++) {
         int j = 0;
